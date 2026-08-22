@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Login{% endblock %}
+{% block content %}
+
+<div class="auth-shell">
+    <h1 class="page-title">Admin Login</h1>
+    <p class="muted">Only the reading-hall administrator can access this system.</p>
+
+    <form method="POST" class="form-card">
+        <div class="form-row">
+            <label for="username">Username</label>
+            <input type="text" id="username" name="username" required autofocus>
+        </div>
+        <div class="form-row">
+            <label for="password">Password</label>
+            <input type="password" id="password" name="password" required>
+        </div>
+        <div class="action-row">
+            <button type="submit" class="btn btn-primary">Log In</button>
+        </div>
+    </form>
+</div>
+
+{% endblock %}

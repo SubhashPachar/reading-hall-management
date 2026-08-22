@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Delete Library{% endblock %}
+{% block content %}
+
+<h1 class="page-title">Delete "{{ library.name }}"?</h1>
+
+<div class="form-card">
+    <p>This library has seats {{ library.start_seat }}–{{ library.end_seat }} and
+       <strong>{{ entry_count }}</strong> active entr{{ 'y' if entry_count == 1 else 'ies' }}.</p>
+    <p class="muted">Deleting this library will permanently remove it and all of its seat entries. This cannot be undone.</p>
+
+    <form method="POST" class="action-row">
+        <button type="submit" class="btn btn-danger">Yes, Delete Library</button>
+        <a href="{{ url_for('libraries_list') }}" class="btn btn-secondary">Cancel</a>
+    </form>
+</div>
+
+{% endblock %}

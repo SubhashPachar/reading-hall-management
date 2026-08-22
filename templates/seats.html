@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Seats{% endblock %}
+{% block content %}
+
+<h1 class="page-title">All Seats — {{ library.name }}</h1>
+
+<div class="legend">
+    <span><i class="dot dot-free"></i> Free</span>
+    <span><i class="dot dot-first"></i> First Half</span>
+    <span><i class="dot dot-second"></i> Second Half</span>
+    <span><i class="dot dot-both"></i> Both Halves</span>
+    <span><i class="dot dot-full"></i> Full Time</span>
+</div>
+
+<div class="seat-grid seat-grid-large">
+    {% for seat in seats %}
+    <a class="seat-tile seat-{{ seat.state|lower }}"
+       href="{{ url_for('library_seat_detail', library_id=library.id, seat_no=seat.seat_no) }}">
+        <span class="seat-number">Seat {{ seat.seat_no }}</span>
+        <span class="seat-status">
+            {% if seat.state == 'FREE' %}FREE
+            {% elif seat.state == 'FIRST_ONLY' %}1ST HALF
+            {% elif seat.state == 'SECOND_ONLY' %}2ND HALF
+            {% elif seat.state == 'BOTH_HALVES' %}BOTH HALVES
+            {% elif seat.state == 'FULL' %}FULL
+            {% endif %}
+        </span>
+        {% if seat.state == 'FIRST_ONLY' %}
+            <span class="seat-sub">{{ seat.summary.FIRST_HALF.student_name }}</span>
+        {% elif seat.state == 'SECOND_ONLY' %}
+            <span class="seat-sub">{{ seat.summary.SECOND_HALF.student_name }}</span>
+        {% elif seat.state == 'FULL' %}
+            <span class="seat-sub">{{ seat.summary.FULL.student_name }}</span>
+        {% elif seat.state == 'BOTH_HALVES' %}
+            <span class="seat-sub">{{ seat.summary.FIRST_HALF.student_name }} / {{ seat.summary.SECOND_HALF.student_name }}</span>
+        {% endif %}
+    </a>
+    {% endfor %}
+</div>
+
+{% endblock %}

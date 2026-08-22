@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Confirm Vacate{% endblock %}
+{% block content %}
+
+<h1 class="page-title">Vacate Seat {{ entry.seat_no }}?</h1>
+
+<div class="form-card">
+    <dl class="entry-dl">
+        <dt>Student</dt><dd>{{ entry.student_name }}</dd>
+        <dt>Mobile</dt><dd>{{ entry.mobile_no }}</dd>
+        <dt>Seat</dt><dd>{{ entry.seat_no }}</dd>
+        <dt>Occupancy</dt><dd>{{ occupancy_labels[entry.occupancy] }}</dd>
+        <dt>Joining</dt><dd>{{ entry.joining_date }}</dd>
+        <dt>Due</dt><dd>{{ entry.due_date }}</dd>
+        <dt>Fees</dt><dd>₹{{ '%.2f'|format(entry.fees) }}</dd>
+    </dl>
+
+    <p class="muted">This will remove this student's entry only. If the other half of this seat is occupied, that entry will not be affected.</p>
+
+    <form method="POST" class="action-row">
+        <button type="submit" class="btn btn-danger">Yes, Vacate Seat</button>
+        <a href="{{ url_for('library_seat_detail', library_id=library.id, seat_no=entry.seat_no) }}" class="btn btn-secondary">Cancel</a>
+    </form>
+</div>
+
+{% endblock %}

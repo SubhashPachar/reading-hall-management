@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}Seat {{ seat_no }}{% endblock %}
+{% block content %}
+
+<a href="{{ url_for('library_seats', library_id=library.id) }}" class="link-quiet back-link">← Back to all seats</a>
+<h1 class="page-title">Seat {{ seat_no }}</h1>
+
+{% if state == 'FULL' %}
+    <div class="detail-card detail-full">
+        <h2>Full Time <span class="badge badge-occupied">Occupied</span></h2>
+        {% set e = summary.FULL %}
+        <dl class="entry-dl">
+            <dt>Student</dt><dd>{{ e.student_name }}</dd>
+            <dt>Mobile</dt><dd>{{ e.mobile_no }}</dd>
+            <dt>Joining</dt><dd>{{ e.joining_date }}</dd>
+            <dt>Due</dt><dd>{{ e.due_date }}</dd>
+            <dt>Fees</dt><dd>₹{{ '%.2f'|format(e.fees) }}</dd>
+            <dt>Fee Status</dt><dd><span class="badge {{ fee_info.FULL[1] }}">{{ fee_info.FULL[0] }}</span></dd>
+        </dl>
+        <p class="muted">No other occupancy allowed for this seat while it is Full Time.</p>
+        <div class="action-row">
+            <a class="btn btn-secondary" href="{{ url_for('library_edit_entry', library_id=library.id, entry_id=e.id) }}">Edit</a>
+            <a class="btn btn-danger" href="{{ url_for('library_delete_entry', library_id=library.id, entry_id=e.id) }}">Vacate</a>
+        </div>
+        {% include "_renew_form.html" %}
+    </div>
+
+{% else %}
+
+    <div class="half-columns">
+        <div class="detail-card {% if summary.FIRST_HALF %}detail-occupied{% else %}detail-empty{% endif %}">
+            <h2>First Half
+                {% if summary.FIRST_HALF %}<span class="badge badge-occupied">Occupied</span>
+                {% else %}<span class="badge badge-free">Available</span>{% endif %}
+            </h2>
+            {% if summary.FIRST_HALF %}
+                {% set e = summary.FIRST_HALF %}
+                <dl class="entry-dl">
+                    <dt>Student</dt><dd>{{ e.student_name }}</dd>
+                    <dt>Mobile</dt><dd>{{ e.mobile_no }}</dd>
+                    <dt>Joining</dt><dd>{{ e.joining_date }}</dd>
+                    <dt>Due</dt><dd>{{ e.due_date }}</dd>
+                    <dt>Fees</dt><dd>₹{{ '%.2f'|format(e.fees) }}</dd>
+                    <dt>Fee Status</dt><dd><span class="badge {{ fee_info.FIRST_HALF[1] }}">{{ fee_info.FIRST_HALF[0] }}</span></dd>
+                </dl>
+                <div class="action-row">
+                    <a class="btn btn-secondary" href="{{ url_for('library_edit_entry', library_id=library.id, entry_id=e.id) }}">Edit</a>
+                    <a class="btn btn-danger" href="{{ url_for('library_delete_entry', library_id=library.id, entry_id=e.id) }}">Vacate</a>
+                </div>
+                {% include "_renew_form.html" %}
+            {% else %}
+                <p class="muted">This half is available.</p>
+                <a class="btn btn-primary" href="{{ url_for('library_add_entry', library_id=library.id, seat=seat_no) }}">Add First Half Entry</a>
+            {% endif %}
+        </div>
+
+        <div class="detail-card {% if summary.SECOND_HALF %}detail-occupied{% else %}detail-empty{% endif %}">
+            <h2>Second Half
+                {% if summary.SECOND_HALF %}<span class="badge badge-occupied">Occupied</span>
+                {% else %}<span class="badge badge-free">Available</span>{% endif %}
+            </h2>
+            {% if summary.SECOND_HALF %}
+                {% set e = summary.SECOND_HALF %}
+                <dl class="entry-dl">
+                    <dt>Student</dt><dd>{{ e.student_name }}</dd>
+                    <dt>Mobile</dt><dd>{{ e.mobile_no }}</dd>
+                    <dt>Joining</dt><dd>{{ e.joining_date }}</dd>
+                    <dt>Due</dt><dd>{{ e.due_date }}</dd>
+                    <dt>Fees</dt><dd>₹{{ '%.2f'|format(e.fees) }}</dd>
+                    <dt>Fee Status</dt><dd><span class="badge {{ fee_info.SECOND_HALF[1] }}">{{ fee_info.SECOND_HALF[0] }}</span></dd>
+                </dl>
+                <div class="action-row">
+                    <a class="btn btn-secondary" href="{{ url_for('library_edit_entry', library_id=library.id, entry_id=e.id) }}">Edit</a>
+                    <a class="btn btn-danger" href="{{ url_for('library_delete_entry', library_id=library.id, entry_id=e.id) }}">Vacate</a>
+                </div>
+                {% include "_renew_form.html" %}
+            {% else %}
+                <p class="muted">This half is available.</p>
+                <a class="btn btn-primary" href="{{ url_for('library_add_entry', library_id=library.id, seat=seat_no) }}">Add Second Half Entry</a>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if not summary.FIRST_HALF and not summary.SECOND_HALF %}
+    <div class="action-row">
+        <a class="btn btn-primary" href="{{ url_for('library_add_entry', library_id=library.id, seat=seat_no) }}">Add Entry (choose Full Time / First / Second)</a>
+    </div>
+    {% endif %}
+
+{% endif %}
+
+{% endblock %}

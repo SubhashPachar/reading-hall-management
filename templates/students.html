@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Students{% endblock %}
+{% block content %}
+
+<h1 class="page-title">Students — {{ library.name }}</h1>
+
+<form method="GET" class="search-form">
+    <input type="text" name="q" value="{{ query }}" placeholder="Search by name, mobile, or seat number">
+    <button type="submit" class="btn btn-primary">Search</button>
+    {% if query %}<a href="{{ url_for('library_students', library_id=library.id) }}" class="btn btn-secondary">Clear</a>{% endif %}
+</form>
+
+{% if results %}
+<table class="data-table">
+    <thead>
+        <tr>
+            <th>Student</th>
+            <th>Mobile</th>
+            <th>Seat</th>
+            <th>Occupancy</th>
+            <th>Joining</th>
+            <th>Due</th>
+            <th>Fees</th>
+            <th>Status</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for row in results %}
+        <tr>
+            <td>{{ row.entry.student_name }}</td>
+            <td>{{ row.entry.mobile_no }}</td>
+            <td><a href="{{ url_for('library_seat_detail', library_id=library.id, seat_no=row.entry.seat_no) }}">Seat {{ row.entry.seat_no }}</a></td>
+            <td>{{ occupancy_labels[row.entry.occupancy] }}</td>
+            <td>{{ row.entry.joining_date }}</td>
+            <td>{{ row.entry.due_date }}</td>
+            <td>₹{{ '%.2f'|format(row.entry.fees) }}</td>
+            <td><span class="badge {{ row.fee_class }}">{{ row.fee_label }}</span></td>
+            <td><a class="link-quiet" href="{{ url_for('library_edit_entry', library_id=library.id, entry_id=row.entry.id) }}">Edit</a></td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p class="muted">No matching students found.</p>
+{% endif %}
+
+{% endblock %}

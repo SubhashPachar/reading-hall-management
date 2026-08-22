@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block title %}Reading Hall{% endblock %} · Reading Hall Manager</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<header class="topbar">
+    <div class="topbar-inner">
+        <a class="brand" href="{{ url_for('index') }}">📖 Reading Hall</a>
+
+        {% if session.admin_id %}
+        <nav class="navlinks">
+            {% if library is defined %}
+                <a href="{{ url_for('library_dashboard', library_id=library.id) }}"
+                   class="{{ 'active' if request.endpoint == 'library_dashboard' else '' }}">Dashboard</a>
+                <a href="{{ url_for('library_seats', library_id=library.id) }}"
+                   class="{{ 'active' if request.endpoint == 'library_seats' else '' }}">Seats</a>
+                <a href="{{ url_for('library_vacant_seats', library_id=library.id) }}"
+                   class="{{ 'active' if request.endpoint == 'library_vacant_seats' else '' }}">Vacant Seats</a>
+                <a href="{{ url_for('library_students', library_id=library.id) }}"
+                   class="{{ 'active' if request.endpoint == 'library_students' else '' }}">Students</a>
+                <a href="{{ url_for('library_fees_due', library_id=library.id) }}"
+                   class="{{ 'active' if request.endpoint == 'library_fees_due' else '' }}">Fees Due</a>
+                <a href="{{ url_for('library_add_entry', library_id=library.id) }}" class="navlink-cta">+ Add Entry</a>
+                <span class="nav-sep">|</span>
+            {% endif %}
+            <a href="{{ url_for('libraries_list') }}"
+               class="{{ 'active' if request.endpoint in ['libraries_list','add_library','edit_library'] else '' }}">Libraries</a>
+            <span class="nav-user">{{ session.admin_username }}</span>
+            <a href="{{ url_for('logout') }}">Logout</a>
+        </nav>
+        {% endif %}
+    </div>
+</header>
+
+<main class="page">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+        <div class="flash-stack">
+            {% for category, message in messages %}
+            <div class="flash flash-{{ category }}">{{ message }}</div>
+            {% endfor %}
+        </div>
+        {% endif %}
+    {% endwith %}
+
+    {% if library is defined %}
+    <div class="library-banner">Managing: <strong>{{ library.name }}</strong>
+        <span class="muted">(Seats {{ library.start_seat }}–{{ library.end_seat }})</span>
+    </div>
+    {% endif %}
+
+    {% block content %}{% endblock %}
+</main>
+
+<footer class="footer">
+    Reading Hall Management System — local admin tool, no public logins, no internet required.
+</footer>
+
+</body>
+</html>

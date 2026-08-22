@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Fees Due{% endblock %}
+{% block content %}
+
+<h1 class="page-title">Fees Due — {{ library.name }}</h1>
+
+<section class="section-block">
+    <h2 class="section-subheading">Overdue ({{ due_list|length }})</h2>
+    {% if due_list %}
+    <table class="data-table">
+        <thead>
+            <tr><th>Student</th><th>Mobile</th><th>Seat</th><th>Occupancy</th><th>Due Date</th><th>Fees</th><th></th></tr>
+        </thead>
+        <tbody>
+            {% for row in due_list %}
+            <tr class="row-due">
+                <td>{{ row.entry.student_name }}</td>
+                <td>{{ row.entry.mobile_no }}</td>
+                <td><a href="{{ url_for('library_seat_detail', library_id=library.id, seat_no=row.entry.seat_no) }}">Seat {{ row.entry.seat_no }}</a></td>
+                <td>{{ occupancy_labels[row.entry.occupancy] }}</td>
+                <td>{{ row.entry.due_date }}</td>
+                <td>₹{{ '%.2f'|format(row.entry.fees) }}</td>
+                <td><a class="link-quiet" href="{{ url_for('library_edit_entry', library_id=library.id, entry_id=row.entry.id) }}">Edit</a></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="muted">No overdue fees. 🎉</p>
+    {% endif %}
+</section>
+
+<section class="section-block">
+    <h2 class="section-subheading">Due Soon (within 7 days) ({{ due_soon_list|length }})</h2>
+    {% if due_soon_list %}
+    <table class="data-table">
+        <thead>
+            <tr><th>Student</th><th>Mobile</th><th>Seat</th><th>Occupancy</th><th>Due Date</th><th>Fees</th><th></th></tr>
+        </thead>
+        <tbody>
+            {% for row in due_soon_list %}
+            <tr class="row-due-soon">
+                <td>{{ row.entry.student_name }}</td>
+                <td>{{ row.entry.mobile_no }}</td>
+                <td><a href="{{ url_for('library_seat_detail', library_id=library.id, seat_no=row.entry.seat_no) }}">Seat {{ row.entry.seat_no }}</a></td>
+                <td>{{ occupancy_labels[row.entry.occupancy] }}</td>
+                <td>{{ row.entry.due_date }}</td>
+                <td>₹{{ '%.2f'|format(row.entry.fees) }}</td>
+                <td><a class="link-quiet" href="{{ url_for('library_edit_entry', library_id=library.id, entry_id=row.entry.id) }}">Edit</a></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="muted">Nothing due soon.</p>
+    {% endif %}
+</section>
+
+{% endblock %}

@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+
+<h1 class="page-title">{{ library.name }} — Dashboard</h1>
+
+<section class="stat-grid">
+    <div class="stat-card">
+        <span class="stat-value">{{ stats.total_seats }}</span>
+        <span class="stat-label">Total Seats</span>
+    </div>
+    <div class="stat-card stat-free">
+        <span class="stat-value">{{ stats.available }}</span>
+        <span class="stat-label">Available</span>
+    </div>
+    <div class="stat-card stat-partial">
+        <span class="stat-value">{{ stats.partially_used }}</span>
+        <span class="stat-label">Partially Used</span>
+    </div>
+    <div class="stat-card stat-full">
+        <span class="stat-value">{{ stats.fully_occupied }}</span>
+        <span class="stat-label">Fully Occupied</span>
+    </div>
+    <div class="stat-card">
+        <span class="stat-value">{{ stats.active_students }}</span>
+        <span class="stat-label">Active Students</span>
+    </div>
+    <div class="stat-card stat-due">
+        <span class="stat-value">{{ stats.fees_due }}</span>
+        <span class="stat-label">Fees Due</span>
+    </div>
+    <div class="stat-card stat-due-soon">
+        <span class="stat-value">{{ stats.due_soon }}</span>
+        <span class="stat-label">Due Soon</span>
+    </div>
+</section>
+
+<section class="section-block">
+    <div class="section-header">
+        <h2>Seat Layout</h2>
+        <a href="{{ url_for('library_seats', library_id=library.id) }}" class="link-quiet">Open full seat view →</a>
+    </div>
+
+    <div class="legend">
+        <span><i class="dot dot-free"></i> Free</span>
+        <span><i class="dot dot-first"></i> First Half</span>
+        <span><i class="dot dot-second"></i> Second Half</span>
+        <span><i class="dot dot-both"></i> Both Halves</span>
+        <span><i class="dot dot-full"></i> Full Time</span>
+    </div>
+
+    <div class="seat-grid">
+        {% for seat in seats %}
+        <a class="seat-tile seat-{{ seat.state|lower }}"
+           href="{{ url_for('library_seat_detail', library_id=library.id, seat_no=seat.seat_no) }}">
+            <span class="seat-number">Seat {{ seat.seat_no }}</span>
+            <span class="seat-status">
+                {% if seat.state == 'FREE' %}FREE
+                {% elif seat.state == 'FIRST_ONLY' %}1ST HALF
+                {% elif seat.state == 'SECOND_ONLY' %}2ND HALF
+                {% elif seat.state == 'BOTH_HALVES' %}BOTH HALVES
+                {% elif seat.state == 'FULL' %}FULL
+                {% endif %}
+            </span>
+        </a>
+        {% endfor %}
+    </div>
+</section>
+
+{% endblock %}

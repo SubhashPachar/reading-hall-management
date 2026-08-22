@@ -1,0 +1,12 @@
+<details class="renew-details">
+    <summary>Renew payment</summary>
+    <form method="POST" action="{{ url_for('library_renew_fee', library_id=library.id, entry_id=e.id) }}" class="inline-form">
+        <label>New Fees
+            <input type="number" step="0.01" min="0" name="fees" required>
+        </label>
+        <label>New Due Date
+            <input type="date" name="due_date" required>
+        </label>
+        <button type="submit" class="btn btn-primary btn-small">Update Payment</button>
+    </form>
+</details>

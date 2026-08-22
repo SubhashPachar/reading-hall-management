@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Set Up Admin Account{% endblock %}
+{% block content %}
+
+<div class="auth-shell">
+    <h1 class="page-title">Create Admin Account</h1>
+    <p class="muted">This is a one-time setup. This account will be the only way to access the system.</p>
+
+    <form method="POST" class="form-card">
+        <div class="form-row">
+            <label for="username">Username</label>
+            <input type="text" id="username" name="username" value="{{ form_data.username }}" required autofocus>
+        </div>
+        <div class="form-row">
+            <label for="password">Password</label>
+            <input type="password" id="password" name="password" minlength="6" required>
+        </div>
+        <div class="form-row">
+            <label for="confirm_password">Confirm Password</label>
+            <input type="password" id="confirm_password" name="confirm_password" minlength="6" required>
+        </div>
+        <div class="action-row">
+            <button type="submit" class="btn btn-primary">Create Admin Account</button>
+        </div>
+    </form>
+</div>
+
+{% endblock %}

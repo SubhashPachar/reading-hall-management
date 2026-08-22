@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Edit Entry{% endblock %}
+{% block content %}
+
+<h1 class="page-title">Edit Entry — {{ entry.student_name }}</h1>
+
+<form method="POST" class="form-card">
+    <div class="form-row">
+        <label for="seat_no">Seat Number</label>
+        <select id="seat_no" name="seat_no" required>
+            {% for n in range(library.start_seat, library.end_seat + 1) %}
+            <option value="{{ n }}" {% if form_data.seat_no|string == n|string %}selected{% endif %}>Seat {{ n }}</option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <div class="form-row">
+        <label for="student_name">Student Name</label>
+        <input type="text" id="student_name" name="student_name" value="{{ form_data.student_name }}" required>
+    </div>
+
+    <div class="form-row">
+        <label for="mobile_no">Mobile Number</label>
+        <input type="text" id="mobile_no" name="mobile_no" maxlength="10" pattern="[0-9]{10}"
+               value="{{ form_data.mobile_no }}" required>
+    </div>
+
+    <div class="form-row">
+        <label for="joining_date">Joining Date</label>
+        <input type="date" id="joining_date" name="joining_date" value="{{ form_data.joining_date }}" required>
+    </div>
+
+    <div class="form-row">
+        <label for="due_date">Due Date</label>
+        <input type="date" id="due_date" name="due_date" value="{{ form_data.due_date }}" required>
+    </div>
+
+    <div class="form-row">
+        <label for="fees">Fees (₹)</label>
+        <input type="number" id="fees" name="fees" step="0.01" min="0" value="{{ form_data.fees }}" required>
+    </div>
+
+    <div class="form-row">
+        <label for="occupancy">Occupancy</label>
+        <select id="occupancy" name="occupancy" required>
+            <option value="FULL" {% if form_data.occupancy == 'FULL' %}selected{% endif %}>Full Time</option>
+            <option value="FIRST_HALF" {% if form_data.occupancy == 'FIRST_HALF' %}selected{% endif %}>First Half</option>
+            <option value="SECOND_HALF" {% if form_data.occupancy == 'SECOND_HALF' %}selected{% endif %}>Second Half</option>
+        </select>
+    </div>
+
+    <div class="action-row">
+        <button type="submit" class="btn btn-primary">Update Entry</button>
+        <a href="{{ url_for('library_seat_detail', library_id=library.id, seat_no=entry.seat_no) }}" class="btn btn-secondary">Cancel</a>
+    </div>
+</form>
+
+{% endblock %}

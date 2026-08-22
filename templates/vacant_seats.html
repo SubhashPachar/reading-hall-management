@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Vacant Seats{% endblock %}
+{% block content %}
+
+<h1 class="page-title">Vacant Seats — {{ library.name }}</h1>
+<p class="muted" style="margin-top:-0.6rem;">
+    Seats that are fully occupied (Full Time, or both halves taken) are not shown here.
+</p>
+
+<section class="section-block">
+    <h2 class="section-subheading">
+        Fully Vacant <span class="count-pill">{{ fully_vacant|length }}</span>
+    </h2>
+    {% if fully_vacant %}
+    <div class="seat-grid seat-grid-large">
+        {% for seat_no in fully_vacant %}
+        <a class="seat-tile seat-free" href="{{ url_for('library_seat_detail', library_id=library.id, seat_no=seat_no) }}">
+            <span class="seat-number">Seat {{ seat_no }}</span>
+            <span class="seat-status">FREE</span>
+        </a>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p class="muted">No completely empty seats right now.</p>
+    {% endif %}
+</section>
+
+<section class="section-block">
+    <h2 class="section-subheading">
+        First Half Vacant <span class="count-pill">{{ first_half_vacant|length }}</span>
+    </h2>
+    <p class="muted" style="margin-top:-0.4rem;">Second half is occupied — first half is open to assign.</p>
+    {% if first_half_vacant %}
+    <div class="seat-grid seat-grid-large">
+        {% for item in first_half_vacant %}
+        <a class="seat-tile seat-second_only" href="{{ url_for('library_seat_detail', library_id=library.id, seat_no=item.seat_no) }}">
+            <span class="seat-number">Seat {{ item.seat_no }}</span>
+            <span class="seat-status">1ST HALF OPEN</span>
+            <span class="seat-sub">2nd half: {{ item.occupant.student_name }}</span>
+        </a>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p class="muted">No seats with only the first half open.</p>
+    {% endif %}
+</section>
+
+<section class="section-block">
+    <h2 class="section-subheading">
+        Second Half Vacant <span class="count-pill">{{ second_half_vacant|length }}</span>
+    </h2>
+    <p class="muted" style="margin-top:-0.4rem;">First half is occupied — second half is open to assign.</p>
+    {% if second_half_vacant %}
+    <div class="seat-grid seat-grid-large">
+        {% for item in second_half_vacant %}
+        <a class="seat-tile seat-first_only" href="{{ url_for('library_seat_detail', library_id=library.id, seat_no=item.seat_no) }}">
+            <span class="seat-number">Seat {{ item.seat_no }}</span>
+            <span class="seat-status">2ND HALF OPEN</span>
+            <span class="seat-sub">1st half: {{ item.occupant.student_name }}</span>
+        </a>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p class="muted">No seats with only the second half open.</p>
+    {% endif %}
+</section>
+
+{% endblock %}

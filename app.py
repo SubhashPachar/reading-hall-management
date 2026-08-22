@@ -1,0 +1,915 @@
+"""
+Reading Hall Management System
+-------------------------------
+A simple Flask + SQLite + Jinja2 server-rendered app to manage one or more
+reading halls ("libraries"), each with its own seat range, students, and
+fees. Protected by a single admin login — no public access, no student
+accounts.
+
+Run with:
+    python app.py
+
+First run: you'll be redirected to /setup to create the admin account.
+"""
+
+import sqlite3
+from datetime import date, datetime, timezone
+from functools import wraps
+import os
+
+from flask import (
+    Flask, render_template, request, redirect, url_for, flash, g, session
+)
+from werkzeug.security import generate_password_hash, check_password_hash
+
+app = Flask(__name__)
+app.secret_key = os.environ.get("SECRET_KEY")
+
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+DUE_SOON_DAYS = 7
+DATABASE = "database.db"
+
+VALID_OCCUPANCIES = {"FULL", "FIRST_HALF", "SECOND_HALF"}
+OCCUPANCY_LABELS = {
+    "FULL": "Full Time",
+    "FIRST_HALF": "First Half",
+    "SECOND_HALF": "Second Half",
+}
+
+
+# ---------------------------------------------------------------------------
+# Database helpers
+# ---------------------------------------------------------------------------
+def get_db():
+    if "db" not in g:
+        g.db = sqlite3.connect(DATABASE)
+        g.db.row_factory = sqlite3.Row
+        g.db.execute("PRAGMA foreign_keys = ON")
+    return g.db
+
+
+@app.teardown_appcontext
+def close_db(exception=None):
+    db = g.pop("db", None)
+    if db is not None:
+        db.close()
+
+
+def init_db():
+    conn = sqlite3.connect(DATABASE)
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS admins (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS libraries (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            start_seat INTEGER NOT NULL,
+            end_seat INTEGER NOT NULL,
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS seat_entries (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            library_id INTEGER NOT NULL,
+            seat_no INTEGER NOT NULL,
+            student_name TEXT NOT NULL,
+            mobile_no TEXT NOT NULL,
+            joining_date TEXT NOT NULL,
+            due_date TEXT NOT NULL,
+            fees REAL NOT NULL,
+            occupancy TEXT NOT NULL CHECK (occupancy IN ('FULL','FIRST_HALF','SECOND_HALF')),
+            FOREIGN KEY (library_id) REFERENCES libraries (id) ON DELETE CASCADE
+        )
+        """
+    )
+    conn.commit()
+    conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Auth helpers
+# ---------------------------------------------------------------------------
+def admin_count(db=None):
+    db = db or get_db()
+    return db.execute("SELECT COUNT(*) AS c FROM admins").fetchone()["c"]
+
+
+def login_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if "admin_id" not in session:
+            return redirect(url_for("login", next=request.path))
+        return view(*args, **kwargs)
+    return wrapped
+
+
+@app.route("/setup", methods=["GET", "POST"])
+def setup():
+    db = get_db()
+    if admin_count(db) > 0:
+        flash("Setup is already complete. Please log in.", "error")
+        return redirect(url_for("login"))
+
+    form_data = {"username": ""}
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "")
+        confirm = request.form.get("confirm_password", "")
+        form_data["username"] = username
+
+        errors = []
+        if not username:
+            errors.append("Username is required.")
+        if len(password) < 6:
+            errors.append("Password must be at least 6 characters.")
+        if password != confirm:
+            errors.append("Passwords do not match.")
+
+        if errors:
+            for e in errors:
+                flash(e, "error")
+            return render_template("setup.html", form_data=form_data)
+
+        db.execute(
+            "INSERT INTO admins (username, password_hash) VALUES (?, ?)",
+            (username, generate_password_hash(password)),
+        )
+        db.commit()
+        flash("Admin account created. Please log in.", "success")
+        return redirect(url_for("login"))
+
+    return render_template("setup.html", form_data=form_data)
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    db = get_db()
+    if admin_count(db) == 0:
+        return redirect(url_for("setup"))
+    if "admin_id" in session:
+        return redirect(url_for("libraries_list"))
+
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "")
+        admin = db.execute(
+            "SELECT * FROM admins WHERE username = ?", (username,)
+        ).fetchone()
+
+        if admin and check_password_hash(admin["password_hash"], password):
+            session.clear()
+            session["admin_id"] = admin["id"]
+            session["admin_username"] = admin["username"]
+            flash(f"Welcome back, {admin['username']}.", "success")
+            next_url = request.args.get("next") or url_for("libraries_list")
+            return redirect(next_url)
+
+        flash("Invalid username or password.", "error")
+
+    return render_template("login.html")
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    flash("You have been logged out.", "success")
+    return redirect(url_for("login"))
+
+
+@app.route("/account/password", methods=["GET", "POST"])
+@login_required
+def change_password():
+    db = get_db()
+    admin = db.execute(
+        "SELECT * FROM admins WHERE id = ?", (session["admin_id"],)
+    ).fetchone()
+
+    if request.method == "POST":
+        current = request.form.get("current_password", "")
+        new = request.form.get("new_password", "")
+        confirm = request.form.get("confirm_password", "")
+        errors = []
+
+        if not check_password_hash(admin["password_hash"], current):
+            errors.append("Current password is incorrect.")
+        if len(new) < 6:
+            errors.append("New password must be at least 6 characters.")
+        if new != confirm:
+            errors.append("New passwords do not match.")
+
+        if errors:
+            for e in errors:
+                flash(e, "error")
+            return render_template("change_password.html")
+
+        db.execute(
+            "UPDATE admins SET password_hash = ? WHERE id = ?",
+            (generate_password_hash(new), admin["id"]),
+        )
+        db.commit()
+        flash("Password updated.", "success")
+        return redirect(url_for("libraries_list"))
+
+    return render_template("change_password.html")
+
+
+# ---------------------------------------------------------------------------
+# Root
+# ---------------------------------------------------------------------------
+@app.route("/")
+def index():
+    if admin_count() == 0:
+        return redirect(url_for("setup"))
+    if "admin_id" not in session:
+        return redirect(url_for("login"))
+    return redirect(url_for("libraries_list"))
+
+
+# ---------------------------------------------------------------------------
+# Library management
+# ---------------------------------------------------------------------------
+def get_library_or_none(library_id, db=None):
+    db = db or get_db()
+    return db.execute("SELECT * FROM libraries WHERE id = ?", (library_id,)).fetchone()
+
+
+def validate_library_form(form):
+    """Returns (name, start_seat, end_seat, errors)."""
+    errors = []
+    name = form.get("name", "").strip()
+    start_raw = form.get("start_seat", "").strip()
+    end_raw = form.get("end_seat", "").strip()
+
+    if not name:
+        errors.append("Library name is required.")
+
+    start_seat = end_seat = None
+    try:
+        start_seat = int(start_raw)
+    except ValueError:
+        errors.append("Start seat number must be a whole number.")
+    try:
+        end_seat = int(end_raw)
+    except ValueError:
+        errors.append("End seat number must be a whole number.")
+
+    if start_seat is not None and start_seat < 1:
+        errors.append("Start seat number must be at least 1.")
+    if start_seat is not None and end_seat is not None and end_seat < start_seat:
+        errors.append("End seat number must be greater than or equal to the start seat number.")
+
+    return name, start_seat, end_seat, errors
+
+
+@app.route("/libraries")
+@login_required
+def libraries_list():
+    db = get_db()
+    libs = db.execute("SELECT * FROM libraries ORDER BY id").fetchall()
+    lib_rows = []
+    for lib in libs:
+        total_seats = lib["end_seat"] - lib["start_seat"] + 1
+        entry_count = db.execute(
+            "SELECT COUNT(*) AS c FROM seat_entries WHERE library_id = ?", (lib["id"],)
+        ).fetchone()["c"]
+        lib_rows.append({"lib": lib, "total_seats": total_seats, "entry_count": entry_count})
+    return render_template("libraries.html", lib_rows=lib_rows)
+
+
+@app.route("/libraries/add", methods=["GET", "POST"])
+@login_required
+def add_library():
+    if request.method == "POST":
+        name, start_seat, end_seat, errors = validate_library_form(request.form)
+        if errors:
+            for e in errors:
+                flash(e, "error")
+            return render_template("library_form.html", mode="add", form_data=request.form)
+
+        db = get_db()
+        db.execute(
+            "INSERT INTO libraries (name, start_seat, end_seat, created_at) VALUES (?, ?, ?, ?)",
+            (name, start_seat, end_seat, datetime.now(timezone.utc).isoformat()),
+        )
+        db.commit()
+        flash(f"Library '{name}' created with seats {start_seat}\u2013{end_seat}.", "success")
+        return redirect(url_for("libraries_list"))
+
+    return render_template("library_form.html", mode="add", form_data={})
+
+
+@app.route("/libraries/<int:library_id>/edit", methods=["GET", "POST"])
+@login_required
+def edit_library(library_id):
+    db = get_db()
+    lib = get_library_or_none(library_id, db)
+    if lib is None:
+        flash("Library not found.", "error")
+        return redirect(url_for("libraries_list"))
+
+    if request.method == "POST":
+        name, start_seat, end_seat, errors = validate_library_form(request.form)
+
+        if not errors:
+            out_of_range = db.execute(
+                """SELECT COUNT(*) AS c FROM seat_entries
+                   WHERE library_id = ? AND (seat_no < ? OR seat_no > ?)""",
+                (library_id, start_seat, end_seat),
+            ).fetchone()["c"]
+            if out_of_range > 0:
+                errors.append(
+                    f"Cannot resize: {out_of_range} existing entr"
+                    f"{'y' if out_of_range == 1 else 'ies'} would fall outside "
+                    f"the new range {start_seat}\u2013{end_seat}. Vacate them first."
+                )
+
+        if errors:
+            for e in errors:
+                flash(e, "error")
+            return render_template(
+                "library_form.html", mode="edit", library=lib, form_data=request.form
+            )
+
+        db.execute(
+            "UPDATE libraries SET name = ?, start_seat = ?, end_seat = ? WHERE id = ?",
+            (name, start_seat, end_seat, library_id),
+        )
+        db.commit()
+        flash("Library updated.", "success")
+        return redirect(url_for("libraries_list"))
+
+    form_data = {"name": lib["name"], "start_seat": lib["start_seat"], "end_seat": lib["end_seat"]}
+    return render_template("library_form.html", mode="edit", library=lib, form_data=form_data)
+
+
+@app.route("/libraries/<int:library_id>/delete", methods=["GET", "POST"])
+@login_required
+def delete_library(library_id):
+    db = get_db()
+    lib = get_library_or_none(library_id, db)
+    if lib is None:
+        flash("Library not found.", "error")
+        return redirect(url_for("libraries_list"))
+
+    entry_count = db.execute(
+        "SELECT COUNT(*) AS c FROM seat_entries WHERE library_id = ?", (library_id,)
+    ).fetchone()["c"]
+
+    if request.method == "POST":
+        db.execute("DELETE FROM seat_entries WHERE library_id = ?", (library_id,))
+        db.execute("DELETE FROM libraries WHERE id = ?", (library_id,))
+        db.commit()
+        flash(f"Library '{lib['name']}' and its {entry_count} entries were deleted.", "success")
+        return redirect(url_for("libraries_list"))
+
+    return render_template("confirm_delete_library.html", library=lib, entry_count=entry_count)
+
+
+# ---------------------------------------------------------------------------
+# Seat-logic helpers (scoped to a library)
+# ---------------------------------------------------------------------------
+def get_seat_entries(library_id, seat_no, db=None):
+    db = db or get_db()
+    return db.execute(
+        "SELECT * FROM seat_entries WHERE library_id = ? AND seat_no = ? ORDER BY occupancy",
+        (library_id, seat_no),
+    ).fetchall()
+
+
+def summarize_seat(library_id, seat_no, db=None):
+    entries = get_seat_entries(library_id, seat_no, db)
+    summary = {"seat_no": seat_no, "FULL": None, "FIRST_HALF": None, "SECOND_HALF": None}
+    for e in entries:
+        summary[e["occupancy"]] = e
+    return summary
+
+
+def seat_state(summary):
+    if summary["FULL"]:
+        return "FULL"
+    if summary["FIRST_HALF"] and summary["SECOND_HALF"]:
+        return "BOTH_HALVES"
+    if summary["FIRST_HALF"]:
+        return "FIRST_ONLY"
+    if summary["SECOND_HALF"]:
+        return "SECOND_ONLY"
+    return "FREE"
+
+
+def check_conflict(library_id, seat_no, occupancy, exclude_id=None, db=None):
+    entries = get_seat_entries(library_id, seat_no, db)
+    if exclude_id is not None:
+        entries = [e for e in entries if e["id"] != exclude_id]
+    existing = {e["occupancy"] for e in entries}
+
+    if occupancy == "FULL":
+        if existing:
+            return False, f"Seat {seat_no} already has an occupant. Full Time cannot be assigned."
+    elif occupancy == "FIRST_HALF":
+        if "FULL" in existing:
+            return False, f"Seat {seat_no} is occupied Full Time. First Half is not allowed."
+        if "FIRST_HALF" in existing:
+            return False, f"Seat {seat_no} already has a First Half occupant."
+    elif occupancy == "SECOND_HALF":
+        if "FULL" in existing:
+            return False, f"Seat {seat_no} is occupied Full Time. Second Half is not allowed."
+        if "SECOND_HALF" in existing:
+            return False, f"Seat {seat_no} already has a Second Half occupant."
+    else:
+        return False, "Invalid occupancy type."
+
+    return True, None
+
+
+def fee_status(due_date_str):
+    try:
+        due = datetime.strptime(due_date_str, "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        return "Unknown", "status-unknown"
+
+    diff = (due - date.today()).days
+    if diff < 0:
+        return "Due", "status-due"
+    if diff <= DUE_SOON_DAYS:
+        return "Due Soon", "status-due-soon"
+    return "Active", "status-active"
+
+
+def validate_entry_form(form, library):
+    errors = []
+    data = {
+        "seat_no": form.get("seat_no", "").strip(),
+        "student_name": form.get("student_name", "").strip(),
+        "mobile_no": form.get("mobile_no", "").strip(),
+        "joining_date": form.get("joining_date", "").strip(),
+        "due_date": form.get("due_date", "").strip(),
+        "fees": form.get("fees", "").strip(),
+        "occupancy": form.get("occupancy", "").strip(),
+    }
+
+    seat_no_int = None
+    if not data["seat_no"]:
+        errors.append("Seat number is required.")
+    else:
+        try:
+            seat_no_int = int(data["seat_no"])
+            if seat_no_int < library["start_seat"] or seat_no_int > library["end_seat"]:
+                errors.append(
+                    f"Seat number must be between {library['start_seat']} and {library['end_seat']}."
+                )
+        except ValueError:
+            errors.append("Seat number must be a whole number.")
+
+    if not data["student_name"]:
+        errors.append("Student name is required.")
+
+    mobile = data["mobile_no"]
+    if not mobile:
+        errors.append("Mobile number is required.")
+    elif not (mobile.isdigit() and len(mobile) == 10):
+        errors.append("Mobile number must be exactly 10 digits.")
+
+    joining_dt = due_dt = None
+    if not data["joining_date"]:
+        errors.append("Joining date is required.")
+    else:
+        try:
+            joining_dt = datetime.strptime(data["joining_date"], "%Y-%m-%d").date()
+        except ValueError:
+            errors.append("Joining date is invalid.")
+
+    if not data["due_date"]:
+        errors.append("Due date is required.")
+    else:
+        try:
+            due_dt = datetime.strptime(data["due_date"], "%Y-%m-%d").date()
+        except ValueError:
+            errors.append("Due date is invalid.")
+
+    if joining_dt and due_dt and due_dt < joining_dt:
+        errors.append("Due date cannot be earlier than joining date.")
+
+    fees_val = None
+    if not data["fees"]:
+        errors.append("Fees amount is required.")
+    else:
+        try:
+            fees_val = float(data["fees"])
+            if fees_val < 0:
+                errors.append("Fees cannot be negative.")
+        except ValueError:
+            errors.append("Fees must be a number.")
+
+    if data["occupancy"] not in VALID_OCCUPANCIES:
+        errors.append("Please select a valid occupancy type.")
+
+    data["seat_no_int"] = seat_no_int
+    data["fees_val"] = fees_val
+    return data, errors
+
+
+# ---------------------------------------------------------------------------
+# Routes: library-scoped dashboard, seats, students, fees
+# ---------------------------------------------------------------------------
+@app.route("/library/<int:library_id>/dashboard")
+@app.route("/library/<int:library_id>/")
+@login_required
+def library_dashboard(library_id):
+    db = get_db()
+    lib = get_library_or_none(library_id, db)
+    if lib is None:
+        flash("Library not found.", "error")
+        return redirect(url_for("libraries_list"))
+
+    seats = []
+    available = partially_used = fully_occupied = 0
+    for seat_no in range(lib["start_seat"], lib["end_seat"] + 1):
+        summary = summarize_seat(library_id, seat_no, db)
+        state = seat_state(summary)
+        seats.append({"seat_no": seat_no, "state": state, "summary": summary})
+        if state == "FREE":
+            available += 1
+        elif state in ("FIRST_ONLY", "SECOND_ONLY"):
+            partially_used += 1
+        else:
+            fully_occupied += 1
+
+    all_entries = db.execute(
+        "SELECT * FROM seat_entries WHERE library_id = ?", (library_id,)
+    ).fetchall()
+    fees_due_count = due_soon_count = 0
+    for e in all_entries:
+        label, _ = fee_status(e["due_date"])
+        if label == "Due":
+            fees_due_count += 1
+        elif label == "Due Soon":
+            due_soon_count += 1
+
+    stats = {
+        "total_seats": lib["end_seat"] - lib["start_seat"] + 1,
+        "available": available,
+        "partially_used": partially_used,
+        "fully_occupied": fully_occupied,
+        "active_students": len(all_entries),
+        "fees_due": fees_due_count,
+        "due_soon": due_soon_count,
+    }
+
+    return render_template(
+        "dashboard.html", library=lib, stats=stats, seats=seats,
+        occupancy_labels=OCCUPANCY_LABELS,
+    )
+
+
+@app.route("/library/<int:library_id>/seats")
+@login_required
+def library_seats(library_id):
+    db = get_db()
+    lib = get_library_or_none(library_id, db)
+    if lib is None:
+        flash("Library not found.", "error")
+        return redirect(url_for("libraries_list"))
+
+    seats = []
+    for seat_no in range(lib["start_seat"], lib["end_seat"] + 1):
+        summary = summarize_seat(library_id, seat_no, db)
+        seats.append({"seat_no": seat_no, "state": seat_state(summary), "summary": summary})
+
+    return render_template("seats.html", library=lib, seats=seats, occupancy_labels=OCCUPANCY_LABELS)
+
+
+@app.route("/library/<int:library_id>/seat/<int:seat_no>")
+@login_required
+def library_seat_detail(library_id, seat_no):
+    db = get_db()
+    lib = get_library_or_none(library_id, db)
+    if lib is None:
+        flash("Library not found.", "error")
+        return redirect(url_for("libraries_list"))
+
+    if seat_no < lib["start_seat"] or seat_no > lib["end_seat"]:
+        flash(f"Seat {seat_no} does not exist in this library.", "error")
+        return redirect(url_for("library_seats", library_id=library_id))
+
+    summary = summarize_seat(library_id, seat_no, db)
+    fee_info = {}
+    for occ in ("FULL", "FIRST_HALF", "SECOND_HALF"):
+        entry = summary[occ]
+        if entry:
+            fee_info[occ] = fee_status(entry["due_date"])
+
+    return render_template(
+        "seat_detail.html",
+        library=lib,
+        seat_no=seat_no,
+        summary=summary,
+        state=seat_state(summary),
+        fee_info=fee_info,
+        occupancy_labels=OCCUPANCY_LABELS,
+    )
+
+
+@app.route("/library/<int:library_id>/add", methods=["GET", "POST"])
+@login_required
+def library_add_entry(library_id):
+    db = get_db()
+    lib = get_library_or_none(library_id, db)
+    if lib is None:
+        flash("Library not found.", "error")
+        return redirect(url_for("libraries_list"))
+
+    if request.method == "POST":
+        data, errors = validate_entry_form(request.form, lib)
+
+        if not errors:
+            ok, conflict_msg = check_conflict(library_id, data["seat_no_int"], data["occupancy"], db=db)
+            if not ok:
+                errors.append(conflict_msg)
+
+        if errors:
+            for err in errors:
+                flash(err, "error")
+            return render_template("add_entry.html", library=lib, occupancy_labels=OCCUPANCY_LABELS, form_data=data)
+
+        db.execute(
+            """INSERT INTO seat_entries
+               (library_id, seat_no, student_name, mobile_no, joining_date, due_date, fees, occupancy)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                library_id, data["seat_no_int"], data["student_name"], data["mobile_no"],
+                data["joining_date"], data["due_date"], data["fees_val"], data["occupancy"],
+            ),
+        )
+        db.commit()
+        flash(
+            f"{data['student_name']} assigned to Seat {data['seat_no_int']} "
+            f"({OCCUPANCY_LABELS[data['occupancy']]}).", "success",
+        )
+        return redirect(url_for("library_seat_detail", library_id=library_id, seat_no=data["seat_no_int"]))
+
+    preselect_seat = request.args.get("seat", "")
+    form_data = {"seat_no": preselect_seat}
+    return render_template("add_entry.html", library=lib, occupancy_labels=OCCUPANCY_LABELS, form_data=form_data)
+
+
+@app.route("/library/<int:library_id>/edit/<int:entry_id>", methods=["GET", "POST"])
+@login_required
+def library_edit_entry(library_id, entry_id):
+    db = get_db()
+    lib = get_library_or_none(library_id, db)
+    if lib is None:
+        flash("Library not found.", "error")
+        return redirect(url_for("libraries_list"))
+
+    entry = db.execute(
+        "SELECT * FROM seat_entries WHERE id = ? AND library_id = ?", (entry_id, library_id)
+    ).fetchone()
+    if entry is None:
+        flash("That entry no longer exists.", "error")
+        return redirect(url_for("library_seats", library_id=library_id))
+
+    if request.method == "POST":
+        data, errors = validate_entry_form(request.form, lib)
+
+        if not errors:
+            ok, conflict_msg = check_conflict(
+                library_id, data["seat_no_int"], data["occupancy"], exclude_id=entry_id, db=db
+            )
+            if not ok:
+                errors.append(conflict_msg)
+
+        if errors:
+            for err in errors:
+                flash(err, "error")
+            return render_template(
+                "edit_entry.html", library=lib, entry=entry,
+                occupancy_labels=OCCUPANCY_LABELS, form_data=data,
+            )
+
+        db.execute(
+            """UPDATE seat_entries
+               SET seat_no = ?, student_name = ?, mobile_no = ?, joining_date = ?,
+                   due_date = ?, fees = ?, occupancy = ?
+               WHERE id = ? AND library_id = ?""",
+            (
+                data["seat_no_int"], data["student_name"], data["mobile_no"],
+                data["joining_date"], data["due_date"], data["fees_val"], data["occupancy"],
+                entry_id, library_id,
+            ),
+        )
+        db.commit()
+        flash("Entry updated successfully.", "success")
+        return redirect(url_for("library_seat_detail", library_id=library_id, seat_no=data["seat_no_int"]))
+
+    form_data = {
+        "seat_no": str(entry["seat_no"]),
+        "student_name": entry["student_name"],
+        "mobile_no": entry["mobile_no"],
+        "joining_date": entry["joining_date"],
+        "due_date": entry["due_date"],
+        "fees": str(entry["fees"]),
+        "occupancy": entry["occupancy"],
+    }
+    return render_template(
+        "edit_entry.html", library=lib, entry=entry,
+        occupancy_labels=OCCUPANCY_LABELS, form_data=form_data,
+    )
+
+
+@app.route("/library/<int:library_id>/delete/<int:entry_id>", methods=["GET", "POST"])
+@login_required
+def library_delete_entry(library_id, entry_id):
+    db = get_db()
+    lib = get_library_or_none(library_id, db)
+    if lib is None:
+        flash("Library not found.", "error")
+        return redirect(url_for("libraries_list"))
+
+    entry = db.execute(
+        "SELECT * FROM seat_entries WHERE id = ? AND library_id = ?", (entry_id, library_id)
+    ).fetchone()
+    if entry is None:
+        flash("That entry no longer exists.", "error")
+        return redirect(url_for("library_seats", library_id=library_id))
+
+    if request.method == "POST":
+        seat_no = entry["seat_no"]
+        db.execute("DELETE FROM seat_entries WHERE id = ? AND library_id = ?", (entry_id, library_id))
+        db.commit()
+        flash(f"{entry['student_name']} has vacated Seat {seat_no}.", "success")
+        return redirect(url_for("library_seat_detail", library_id=library_id, seat_no=seat_no))
+
+    return render_template("confirm_delete.html", library=lib, entry=entry, occupancy_labels=OCCUPANCY_LABELS)
+
+
+@app.route("/library/<int:library_id>/renew/<int:entry_id>", methods=["POST"])
+@login_required
+def library_renew_fee(library_id, entry_id):
+    db = get_db()
+    lib = get_library_or_none(library_id, db)
+    if lib is None:
+        flash("Library not found.", "error")
+        return redirect(url_for("libraries_list"))
+
+    entry = db.execute(
+        "SELECT * FROM seat_entries WHERE id = ? AND library_id = ?", (entry_id, library_id)
+    ).fetchone()
+    if entry is None:
+        flash("That entry no longer exists.", "error")
+        return redirect(url_for("library_seats", library_id=library_id))
+
+    new_fees = request.form.get("fees", "").strip()
+    new_due = request.form.get("due_date", "").strip()
+    errors = []
+
+    fees_val = None
+    if not new_fees:
+        errors.append("Fees amount is required.")
+    else:
+        try:
+            fees_val = float(new_fees)
+            if fees_val < 0:
+                errors.append("Fees cannot be negative.")
+        except ValueError:
+            errors.append("Fees must be a number.")
+
+    if not new_due:
+        errors.append("New due date is required.")
+    else:
+        try:
+            datetime.strptime(new_due, "%Y-%m-%d")
+        except ValueError:
+            errors.append("New due date is invalid.")
+
+    if errors:
+        for err in errors:
+            flash(err, "error")
+        return redirect(url_for("library_seat_detail", library_id=library_id, seat_no=entry["seat_no"]))
+
+    db.execute(
+        "UPDATE seat_entries SET fees = ?, due_date = ? WHERE id = ? AND library_id = ?",
+        (fees_val, new_due, entry_id, library_id),
+    )
+    db.commit()
+    flash(f"Payment renewed for {entry['student_name']}. New due date: {new_due}.", "success")
+    return redirect(url_for("library_seat_detail", library_id=library_id, seat_no=entry["seat_no"]))
+
+
+@app.route("/library/<int:library_id>/vacant-seats")
+@login_required
+def library_vacant_seats(library_id):
+    db = get_db()
+    lib = get_library_or_none(library_id, db)
+    if lib is None:
+        flash("Library not found.", "error")
+        return redirect(url_for("libraries_list"))
+
+    fully_vacant = []
+    first_half_vacant = []   # first half is free; second half is occupied by someone
+    second_half_vacant = []  # second half is free; first half is occupied by someone
+
+    for seat_no in range(lib["start_seat"], lib["end_seat"] + 1):
+        summary = summarize_seat(library_id, seat_no, db)
+        state = seat_state(summary)
+        if state == "FREE":
+            fully_vacant.append(seat_no)
+        elif state == "FIRST_ONLY":
+            # first half occupied -> second half is the vacant one
+            second_half_vacant.append({"seat_no": seat_no, "occupant": summary["FIRST_HALF"]})
+        elif state == "SECOND_ONLY":
+            # second half occupied -> first half is the vacant one
+            first_half_vacant.append({"seat_no": seat_no, "occupant": summary["SECOND_HALF"]})
+        # BOTH_HALVES and FULL seats have no vacancy at all, so they're excluded
+
+    return render_template(
+        "vacant_seats.html",
+        library=lib,
+        fully_vacant=fully_vacant,
+        first_half_vacant=first_half_vacant,
+        second_half_vacant=second_half_vacant,
+    )
+
+
+@app.route("/library/<int:library_id>/students")
+@login_required
+def library_students(library_id):
+    db = get_db()
+    lib = get_library_or_none(library_id, db)
+    if lib is None:
+        flash("Library not found.", "error")
+        return redirect(url_for("libraries_list"))
+
+    query = request.args.get("q", "").strip()
+    if query:
+        like = f"%{query}%"
+        results = db.execute(
+            """SELECT * FROM seat_entries
+               WHERE library_id = ? AND
+                     (student_name LIKE ? OR mobile_no LIKE ? OR CAST(seat_no AS TEXT) LIKE ?)
+               ORDER BY seat_no""",
+            (library_id, like, like, like),
+        ).fetchall()
+    else:
+        results = db.execute(
+            "SELECT * FROM seat_entries WHERE library_id = ? ORDER BY seat_no", (library_id,)
+        ).fetchall()
+
+    enriched = []
+    for r in results:
+        label, css_class = fee_status(r["due_date"])
+        enriched.append({"entry": r, "fee_label": label, "fee_class": css_class})
+
+    return render_template(
+        "students.html", library=lib, results=enriched, query=query, occupancy_labels=OCCUPANCY_LABELS
+    )
+
+
+@app.route("/library/<int:library_id>/fees-due")
+@login_required
+def library_fees_due(library_id):
+    db = get_db()
+    lib = get_library_or_none(library_id, db)
+    if lib is None:
+        flash("Library not found.", "error")
+        return redirect(url_for("libraries_list"))
+
+    all_entries = db.execute(
+        "SELECT * FROM seat_entries WHERE library_id = ? ORDER BY due_date", (library_id,)
+    ).fetchall()
+
+    due_list, due_soon_list = [], []
+    for e in all_entries:
+        label, css_class = fee_status(e["due_date"])
+        item = {"entry": e, "fee_label": label, "fee_class": css_class}
+        if label == "Due":
+            due_list.append(item)
+        elif label == "Due Soon":
+            due_soon_list.append(item)
+
+    return render_template(
+        "fees_due.html", library=lib, due_list=due_list, due_soon_list=due_soon_list,
+        occupancy_labels=OCCUPANCY_LABELS,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+if __name__ == "__main__":
+    init_db()
+    app.run(debug=True)
+else:
+    init_db()
