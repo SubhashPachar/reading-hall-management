@@ -12,7 +12,8 @@ Run with:
 First run: you'll be redirected to /setup to create the admin account.
 """
 
-import sqlite3
+import psycopg
+from psycopg.rows import dict_row
 from datetime import date, datetime, timezone
 from functools import wraps
 import os
@@ -29,7 +30,7 @@ app.secret_key = os.environ.get("SECRET_KEY")
 # Configuration
 # ---------------------------------------------------------------------------
 DUE_SOON_DAYS = 7
-DATABASE = "database.db"
+DATABASE_URL = os.environ.get("DATABASE_URL")
 
 VALID_OCCUPANCIES = {"FULL", "FIRST_HALF", "SECOND_HALF"}
 OCCUPANCY_LABELS = {
@@ -44,9 +45,7 @@ OCCUPANCY_LABELS = {
 # ---------------------------------------------------------------------------
 def get_db():
     if "db" not in g:
-        g.db = sqlite3.connect(DATABASE)
-        g.db.row_factory = sqlite3.Row
-        g.db.execute("PRAGMA foreign_keys = ON")
+        g.db = psycopg.connect(DATABASE_URL, row_factory=dict_row)
     return g.db
 
 
@@ -58,8 +57,8 @@ def close_db(exception=None):
 
 
 def init_db():
-    conn = sqlite3.connect(DATABASE)
-    conn.execute(
+    with psycopg.connect(DATABASE_URL) as conn:
+        conn.execute(
         """
         CREATE TABLE IF NOT EXISTS admins (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
